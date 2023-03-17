@@ -1,24 +1,21 @@
 const Tour = require('./../models/tourModel');
+const APIFeatures = require('./../utils/apiFeatures')
 
-// const tours = JSON.parse(
-//   fs.readFileSync(`${__dirname}/../dev-data/data/tours-simple.json`)
-// );
+exports.aliasTopTours = (req, res, next)=>{
+  req.query.limit = '5';
+  req.query.sort = '-ratingsAverage,price';
+  req.query.fields = 'name,price,ratingsAverage,summary,difficulty';
+  next();
+};
 
 
 
 //take out the call back function(route handler)
 exports.getAllTours = async (req, res) => {
-  //query all the documents from the Tour colleciton  Tour.find()=>return a promise
   try{
-    //BUILD THE QUERY
-    const queryObj = {...req.query};
-    const excludedFields = ['page', 'sort', 'limit', 'fields'];
-    excludedFields.forEach(el=>delete queryObj[el]);
-
-    console.log(req.query, queryObj);
-    const query= Tour.find(queryObj);
     //EXECUTE QUERY
-    const tours = await query;
+    const features = new APIFeatures(Tour.find(), req.query).filter().sort().paginate();
+    const tours = await features.query;
 
     //SEND RESPONSE
  res.status(200).json({
@@ -119,3 +116,94 @@ await Tour.findByIdAndDelete(req.params.id)
   }
  
 };
+
+exports.getTourStats = async(req, res) =>{
+  try{
+const stats = await Tour.aggregate([
+  {
+    $match:{ratingsAverage:{$gte:4.5}}
+  },
+  {
+$group:{
+  _id:'$difficulty', //group by what=>null is no group
+  numTours:{$sum:1},//add one for each document
+  sumRatings:{$sum:'$ratingsQuantity'},
+  avgRating:{$avg:'$ratingsAverage'},
+  avgPrice:{$avg:'$price'}, 
+  minPrice:{$min:'$price'},
+  maxPrice:{$max:'$price'},
+}
+  },
+{
+  $sort:{avgPrice:1}
+},//1 for ascending
+// {
+//   $match:{_id:{$ne:'easy'}}
+// } //you can chain up same stage multiple times
+])
+
+res.status(200).json({
+  status: 'success',
+  data: {
+    stats
+  },
+})
+
+  }catch(err){
+    res.status(404).json({
+      status:"fail",
+      message: err
+    })
+  }
+}
+
+exports.getMonthlyPlan = async(req,res)=>{
+  try{
+    const year = req.params.year*1;//2021
+
+    const plan = await Tour.aggregate([
+      {
+        $unwind:'$startDates'
+      },
+      {
+        $match:{
+          startDates:{
+            $gte: new Date(`${year}-01-01`),
+            $lte: new Date(`${year}-12-31`),
+          }
+        }
+      },{
+        $group:{
+          _id:{$month:'$startDates'},
+          //mongoDB operator=>extract the month out of the date =>$month
+          numTourStarts:{$sum:1},
+          tours:{$push:'$name'}
+        }
+      },{
+        $addFields:{month:'$_id'}
+      },{
+        $project:{
+          _id:0
+        }
+      },{
+        $sort:{
+          numTourStarts:-1
+        }
+      },{
+        $limit:12
+      }
+    ]);
+
+    res.status(200).json({
+      status: 'success',
+      data: {
+        plan
+      }
+    });
+  }catch(err){
+    res.status(404).json({
+      status:"fail",
+      message: err
+    })
+    }
+}

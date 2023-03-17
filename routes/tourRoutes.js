@@ -9,6 +9,13 @@ const router = express.Router(); //create a new router and save it to a variable
 //create checkBody middleware
 //controller=>route handler functions
 
+router.route('/top-5-cheap').get(tourController.aliasTopTours, tourController.getAllTours);
+
+
+router.route('/tour-stats').get(tourController.getTourStats);
+
+router.route('/monthly-plan/:year').get(tourController.getMonthlyPlan);
+
 router
   .route('/')
   .get(tourController.getAllTours)
